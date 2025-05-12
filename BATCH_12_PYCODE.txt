@@ -1,0 +1,136 @@
+from django.shortcuts import render
+from django.template import RequestContext
+from django.contrib import messages
+import pymysql
+from django.http import HttpResponse
+
+import pandas as pd
+import numpy as np
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from numpy import dot
+from numpy.linalg import norm
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from nltk.corpus import stopwords
+
+stop_words = set(stopwords.words('english'))
+sid = SentimentIntensityAnalyzer()
+
+def getReview(review):
+    review_result = "none"
+    review = review.lower()
+    review = re.sub('[^A-Za-z]+', ' ', review)
+    sentiment_dict = sid.polarity_scores(review.strip())
+    compound = sentiment_dict['compound']
+    if compound >= 0.05 : 
+        review_result = 'Positive'
+    return review_result    
+    
+    
+dataset = pd.read_csv("Dataset/amazon_reviews.csv")
+dataset = dataset.values
+text = dataset[:,0]
+label = dataset[:,1]
+
+tfidf_vectorizer = TfidfVectorizer(stop_words=stop_words, use_idf=True, smooth_idf=False, norm=None, decode_error='replace', max_features=1000,lowercase=True)
+tfidf = tfidf_vectorizer.fit_transform(text).toarray()        
+df = pd.DataFrame(tfidf, columns=tfidf_vectorizer.get_feature_names())
+print(df.shape)
+df = df.values
+X = df[:, 0:1000]
+
+
+def index(request):
+    if request.method == 'GET':
+       return render(request, 'index.html', {})
+
+def Login(request):
+    if request.method == 'GET':
+       return render(request, 'Login.html', {})
+
+def Register(request):
+    if request.method == 'GET':
+       return render(request, 'Register.html', {})
+
+def Recommendation(request):
+    if request.method == 'GET':
+       return render(request, 'Recommendation.html', {})
+
+
+def RecommendationAction(request):
+    if request.method == 'POST':
+        query = request.POST.get('t1', False)
+        test = query.lower().strip()
+        test = tfidf_vectorizer.transform([test]).toarray()
+        test = test[0]
+        similarity = 0
+        review = 'Unable to get review for recommendation'
+        rating = 0
+        suggestion = "No suggestion available"
+        for j in range(len(X)):
+            review_score = dot(X[j], test)/(norm(X[j])*norm(test))
+            if review_score > similarity:
+                similarity = review_score
+                review_type = getReview(text[j])
+                if review_type == 'Positive':
+                    review = text[j]
+                    rating = label[j]
+                    suggestion = "you have chosen best product"
+        output="<html><body><center><table border=1><tr><th><font size=3 color=black>Product Name</th>"
+        output+="<th><font size=3 color=black>Recommended Best Review</th>"
+        output+="<th><font size=3 color=black>Recommended Best Rating</th><th><font size=3 color=black>Suggestion</th></tr>"
+        output+="<tr><td><font size=3 color=black>"+query+"</td><td><font size=3 color=black>"+review+"</td><td><font size=3 color=black>"+str(rating)+"</td><td><font size=3 color=black>"+suggestion+"</td>"
+        #output+"</tr><br/><br/><br/><br/><br/><br/></table>"
+        context= {'data':output}
+        return render(request, 'Result.html', context)      
+
+def Signup(request):
+    if request.method == 'POST':
+      #user_ip = getClientIP(request)
+      #reader = geoip2.database.Reader('C:/Python/PlantDisease/GeoLite2-City.mmdb')
+      #response = reader.city('103.48.68.11')
+      #print(user_ip)
+      #print(response.location.latitude)
+      #print(response.location.longitude)
+      username = request.POST.get('username', False)
+      password = request.POST.get('password', False)
+      contact = request.POST.get('contact', False)
+      email = request.POST.get('email', False)
+      address = request.POST.get('address', False)
+      
+      db_connection = pymysql.connect(host='127.0.0.1',port = 3306,user = 'root', password = 'root', database = 'Recommendation',charset='utf8')
+      db_cursor = db_connection.cursor()
+      student_sql_query = "INSERT INTO register(username,password,contact,email,address) VALUES('"+username+"','"+password+"','"+contact+"','"+email+"','"+address+"')"
+      db_cursor.execute(student_sql_query)
+      db_connection.commit()
+      print(db_cursor.rowcount, "Record Inserted")
+      if db_cursor.rowcount == 1:
+       context= {'data':'Signup Process Completed'}
+       return render(request, 'Register.html', context)
+      else:
+       context= {'data':'Error in signup process'}
+       return render(request, 'Register.html', context)    
+        
+def UserLogin(request):
+    if request.method == 'POST':
+        username = request.POST.get('username', False)
+        password = request.POST.get('password', False)
+        utype = 'none'
+        con = pymysql.connect(host='127.0.0.1',port = 3306,user = 'root', password = 'root', database = 'Recommendation',charset='utf8')
+        with con:
+            cur = con.cursor()
+            cur.execute("select * FROM register")
+            rows = cur.fetchall()
+            for row in rows:
+                if row[0] == username and row[1] == password:
+                    utype = 'success'
+                    break
+        if utype == 'success':
+            file = open('session.txt','w')
+            file.write(username)
+            file.close()
+            context= {'data':'welcome '+username}
+            return render(request, 'UserScreen.html', context)
+        if utype == 'none':
+            context= {'data':'Invalid login details'}
+            return render(request, 'Login.html', context)

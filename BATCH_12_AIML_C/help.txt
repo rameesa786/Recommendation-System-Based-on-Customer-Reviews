@@ -1,0 +1,2 @@
+Step 1: First open your terminal or command prompt and navigate to the directory where your python file is located using the "cd" command,
+Step 2 : Now type "py BATCH_12_PY_CODE.py" in the command prompt to run the python program and press enter. As soon as we press enter,the file gets executed and we can see the output on the screen.
